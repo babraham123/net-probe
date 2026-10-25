@@ -1,0 +1,16 @@
+# /etc/systemd/system/net_probe.service
+
+[Unit]
+Description=Network probe: pings, speed test and iperf3
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/net_probe --config /etc/net_probe/config.json
+
+# Slot hours are local time: set the zone they mean if the host's differs
+#Environment=TZ=America/Los_Angeles
+
+# A run with every test due takes about two minutes
+TimeoutStartSec=10min

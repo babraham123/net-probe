@@ -1,0 +1,20 @@
+{
+  "victoriametrics": {
+    "query_url": "http://victoriametrics.example.com:8428/api/v1/query",
+    "user": "admin",
+    "password_file": "/etc/net_probe/vm_password"
+  },
+  "isp": {"down_mbps": 1000, "up_mbps": 100},
+  "targets": {"nas": "192.168.1.20", "vps": "100.64.0.2"},
+  "tests": [
+    {"test": "speedtest", "slots": [3, 9, 15, 21], "busy": [
+      {"query": "rate(node_network_receive_bytes_total{instance=\"router:9100\", device=\"wan0\"}[5m]) * 8", "limit_bps": 300000000},
+      {"query": "rate(node_network_transmit_bytes_total{instance=\"router:9100\", device=\"wan0\"}[5m]) * 8", "limit_bps": 30000000}
+    ]},
+    {"test": "iperf", "path": "nas", "slots": [1, 7, 13, 19], "busy": [
+      {"query": "rate(node_network_receive_bytes_total{instance=\"nas:9100\", device=~\"en.*|eth.*\"}[5m]) * 8", "limit_bps": 200000000},
+      {"query": "rate(node_network_transmit_bytes_total{instance=\"nas:9100\", device=~\"en.*|eth.*\"}[5m]) * 8", "limit_bps": 200000000}
+    ]},
+    {"test": "iperf", "path": "vps", "slots": [4]}
+  ]
+}
