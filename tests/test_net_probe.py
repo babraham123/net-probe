@@ -1,4 +1,4 @@
-# net_probe.py against its spec: pings every target each run, before any heavy test; heavy
+# net_probe against its spec: pings every target each run, before any heavy test; heavy
 # tests run one at a time in config order (here speed test, pve2 iperf3, VPS iperf3, each
 # iperf3 both ways), only when their latest slot (speed test 03/09/15/21, pve2 01/07/13/19,
 # VPS 04) is after their last success, so once per slot; a busy path or a busy iperf3 server
@@ -9,7 +9,7 @@
 #   python3 -m unittest discover -s tests
 
 import calendar
-import importlib.util
+import io
 import json
 import os
 import subprocess
@@ -17,13 +17,16 @@ import sys
 import tempfile
 import time
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 
-SCRIPT = Path(__file__).resolve().parent.parent / "net_probe.py"
-spec = importlib.util.spec_from_file_location("net_probe", SCRIPT)
-net_probe = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(net_probe)
-net_probe.log = lambda message: None
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT))
+
+import build  # noqa: E402
+from net_probe.commands import run  # noqa: E402
+from net_probe.config import ConfigError, load_config  # noqa: E402
 
 # Slots are local hours; the tests' times are UTC
 os.environ["TZ"] = "UTC"
@@ -120,7 +123,8 @@ class NetProbeTest(unittest.TestCase):
     """One run at HH:MM on 2026-10-24 (UTC); the calls it made."""
     tools = Fake(faults)
     now = calendar.timegm((2026, 10, 24, *map(int, at.split(":")), 0))
-    net_probe.run(net_probe.load_config(self.config_path), now, tools)
+    with redirect_stdout(io.StringIO()):
+      run(load_config(self.config_path), now, tools)
     return tools.calls
 
   def samples(self, metric):
@@ -274,23 +278,31 @@ class NetProbeTest(unittest.TestCase):
       with self.subTest(message):
         config = {k: v for k, v in {**CONFIG, **change}.items() if v is not None}
         self.write_config(config)
-        with self.assertRaises(net_probe.ConfigError) as raised:
-          net_probe.load_config(self.config_path)
+        with self.assertRaises(ConfigError) as raised:
+          load_config(self.config_path)
         self.assertTrue(str(raised.exception).endswith(message), raised.exception)
     config = {k: v for k, v in CONFIG.items() if k != "victoriametrics"}
     self.write_config(config)
     with self.assertRaisesRegex(
-      net_probe.ConfigError, "speedtest has busy checks but there is no victoriametrics"
+      ConfigError, "speedtest has busy checks but there is no victoriametrics"
     ):
-      net_probe.load_config(self.config_path)
+      load_config(self.config_path)
 
   def test_example_config_is_valid(self):
-    config = net_probe.load_config(SCRIPT.parent / "config.example.json")
+    config = load_config(ROOT / "config.example.json")
     self.assertEqual([t["probe"] for t in config["tests"]], ["speedtest", "iperf_nas", "iperf_vps"])
 
+  def test_zipapp_runs_as_one_file(self):
+    app = build.build(self.dir / "net_probe")
+    self.assertTrue(os.access(app, os.X_OK))
+    out = subprocess.run([app, "--help"], capture_output=True, text=True, cwd=self.dir)
+    self.assertEqual(out.returncode, 0, out.stderr)
+    self.assertIn("usage: net_probe", out.stdout)
+
   def test_cli_reports_a_bad_config_without_a_traceback(self):
+    app = build.build(self.dir / "net_probe")
     out = subprocess.run(
-      [sys.executable, "-I", str(SCRIPT), "--config", str(self.dir / "missing.json")],
+      [sys.executable, "-I", str(app), "--config", str(self.dir / "missing.json")],
       stdout=subprocess.PIPE,
       stderr=subprocess.PIPE,
       text=True,
