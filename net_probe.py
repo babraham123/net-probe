@@ -33,16 +33,28 @@ DEFAULTS = {
 HELP = {
   "ping_loss_ratio": ("gauge", "Share of 20 pings to the path that got no reply."),
   "ping_rtt_seconds": ("gauge", "Average round trip of the replied pings."),
-  "speedtest_bits_per_second": ("gauge", "Ookla speed test throughput; direction down is the download."),
+  "speedtest_bits_per_second": (
+    "gauge",
+    "Ookla speed test throughput; direction down is the download.",
+  ),
   "isp_plan_bits_per_second": ("gauge", "The ISP plan's advertised speed (config isp)."),
   "speedtest_latency_seconds": ("gauge", "Ookla speed test idle latency."),
   "speedtest_jitter_seconds": ("gauge", "Ookla speed test idle jitter."),
-  "speedtest_packet_loss_ratio": ("gauge", "Ookla speed test packet loss, when the server reports it."),
+  "speedtest_packet_loss_ratio": (
+    "gauge",
+    "Ookla speed test packet loss, when the server reports it.",
+  ),
   "speedtest_info": ("gauge", "The last speed test's server and ISP."),
   "iperf_up": ("gauge", "1 when the path's iperf3 server answered, 0 when it was unreachable."),
-  "iperf_bits_per_second": ("gauge", "iperf3 throughput as received; direction up is from this host."),
+  "iperf_bits_per_second": (
+    "gauge",
+    "iperf3 throughput as received; direction up is from this host.",
+  ),
   "iperf_retransmits": ("gauge", "TCP retransmits by the iperf3 sender."),
-  "net_probe_last_attempt_timestamp_seconds": ("gauge", "Unix time the probe last ran or was skipped."),
+  "net_probe_last_attempt_timestamp_seconds": (
+    "gauge",
+    "Unix time the probe last ran or was skipped.",
+  ),
   "net_probe_last_success_timestamp_seconds": ("gauge", "Unix time the probe last succeeded."),
   "net_probe_skipped_total": ("counter", "Probes skipped or failed, by reason."),
 }
@@ -54,6 +66,7 @@ class ConfigError(Exception):
 
 class Skip(Exception):
   """A probe that didn't measure: reason labels the skip, samples replace its last ones."""
+
   def __init__(self, reason, samples=None):
     super().__init__(reason)
     self.reason = reason
@@ -93,6 +106,7 @@ def load_config(path):
 
 class Tools:
   """The commands and the metrics query; tests substitute their own."""
+
   def __init__(self, config):
     self.speedtest_command = config["speedtest"]
     self.vm = config.get("victoriametrics", {})
@@ -100,8 +114,13 @@ class Tools:
 
   def ping(self, address):
     """(loss ratio, average rtt in seconds or None) over 20 pings."""
-    out = subprocess.run(["ping", "-c", "20", "-i", "0.2", "-W", "1", "-q", address], text=True,
-                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60).stdout
+    out = subprocess.run(
+      ["ping", "-c", "20", "-i", "0.2", "-W", "1", "-q", address],
+      text=True,
+      stdout=subprocess.PIPE,
+      stderr=subprocess.STDOUT,
+      timeout=60,
+    ).stdout
     counts = re.search(r"(\d+) packets transmitted, (\d+) received", out)
     if not counts or not int(counts[1]):
       return 1.0, None
@@ -110,21 +129,24 @@ class Tools:
 
   def speedtest(self):
     command = [self.speedtest_command, "--format=json", "--accept-license", "--accept-gdpr"]
-    return json.loads(subprocess.run(command, check=True, text=True, stdout=subprocess.PIPE,
-                                     timeout=180).stdout)
+    return json.loads(
+      subprocess.run(command, check=True, text=True, stdout=subprocess.PIPE, timeout=180).stdout
+    )
 
   def iperf(self, address, reverse):
     """iperf3's JSON report; on failure it carries only an error."""
     command = ["iperf3", "-c", address, "-J", "-t", "10", "-O", "2", "--connect-timeout", "3000"]
-    out = subprocess.run(command + (["-R"] if reverse else []), text=True, stdout=subprocess.PIPE,
-                         timeout=60).stdout
+    out = subprocess.run(
+      command + (["-R"] if reverse else []), text=True, stdout=subprocess.PIPE, timeout=60
+    ).stdout
     return json.loads(out)
 
   def basic_auth(self):
     """The Authorization header value, or "" without a password."""
     if "password_command" in self.vm:
-      password = subprocess.run(self.vm["password_command"], check=True, text=True,
-                                stdout=subprocess.PIPE).stdout.rstrip("\n")
+      password = subprocess.run(
+        self.vm["password_command"], check=True, text=True, stdout=subprocess.PIPE
+      ).stdout.rstrip("\n")
     elif "password_file" in self.vm:
       password = Path(self.vm["password_file"]).read_text().rstrip("\n")
     else:
@@ -138,7 +160,9 @@ class Tools:
       self.authorization = self.basic_auth()
     headers = {"Authorization": self.authorization} if self.authorization else {}
     url = f"{self.vm['query_url']}?{urllib.parse.urlencode({'query': expr})}"
-    with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=10) as response:
+    with urllib.request.urlopen(
+      urllib.request.Request(url, headers=headers), timeout=10
+    ) as response:
       return [float(r["value"][1]) for r in json.load(response)["data"]["result"]]
 
 
@@ -149,7 +173,9 @@ def log(message):
 def latest_slot(now, hours):
   """Unix time of the latest slot hour at or before now, in local time."""
   local = datetime.fromtimestamp(now)
-  past = [local.replace(hour=h, minute=0, second=0, microsecond=0) for h in hours if h <= local.hour]
+  past = [
+    local.replace(hour=h, minute=0, second=0, microsecond=0) for h in hours if h <= local.hour
+  ]
   if not past:
     past = [(local - timedelta(days=1)).replace(hour=max(hours), minute=0, second=0, microsecond=0)]
   return max(past).timestamp()
@@ -176,8 +202,11 @@ def speedtest(tools):
     ["speedtest_bits_per_second", {"direction": "up"}, r["upload"]["bandwidth"] * 8],
     ["speedtest_latency_seconds", {}, r["ping"]["latency"] / 1000],
     ["speedtest_jitter_seconds", {}, r["ping"]["jitter"] / 1000],
-    ["speedtest_info", {"server": f"{r['server']['name']} ({r['server']['location']})",
-                        "isp": r["isp"]}, 1],
+    [
+      "speedtest_info",
+      {"server": f"{r['server']['name']} ({r['server']['location']})", "isp": r["isp"]},
+      1,
+    ],
   ]
   if "packetLoss" in r:
     samples.append(["speedtest_packet_loss_ratio", {}, r["packetLoss"] / 100])
@@ -196,7 +225,9 @@ def iperf(tools, path, address):
     if error:
       raise RuntimeError(error)
     labels = {"path": path, "direction": direction}
-    samples.append(["iperf_bits_per_second", labels, result["end"]["sum_received"]["bits_per_second"]])
+    samples.append(
+      ["iperf_bits_per_second", labels, result["end"]["sum_received"]["bits_per_second"]]
+    )
     samples.append(["iperf_retransmits", labels, result["end"]["sum_sent"].get("retransmits", 0)])
   return samples
 
@@ -223,16 +254,26 @@ def write(path, text):
 
 def exposition(config, state):
   isp = config["isp"]
-  series = {"isp_plan_bits_per_second": [({"direction": "down"}, isp["down_mbps"] * 1e6),
-                                         ({"direction": "up"}, isp["up_mbps"] * 1e6)]}
+  series = {
+    "isp_plan_bits_per_second": [
+      ({"direction": "down"}, isp["down_mbps"] * 1e6),
+      ({"direction": "up"}, isp["up_mbps"] * 1e6),
+    ]
+  }
   for probe, s in sorted(state.items()):
     for name, labels, value in s.get("samples", []):
       series.setdefault(name, []).append((labels, value))
-    series.setdefault("net_probe_last_attempt_timestamp_seconds", []).append(({"probe": probe}, s["attempt"]))
+    series.setdefault("net_probe_last_attempt_timestamp_seconds", []).append(
+      ({"probe": probe}, s["attempt"])
+    )
     if "success" in s:
-      series.setdefault("net_probe_last_success_timestamp_seconds", []).append(({"probe": probe}, s["success"]))
+      series.setdefault("net_probe_last_success_timestamp_seconds", []).append(
+        ({"probe": probe}, s["success"])
+      )
     for reason, n in sorted(s["skipped"].items()):
-      series.setdefault("net_probe_skipped_total", []).append(({"probe": probe, "reason": reason}, n))
+      series.setdefault("net_probe_skipped_total", []).append(
+        ({"probe": probe, "reason": reason}, n)
+      )
   lines = []
   for name, (kind, text) in HELP.items():
     if name not in series:
@@ -282,8 +323,12 @@ def run(config, now, tools):
 
 
 def main():
-  parser = argparse.ArgumentParser(description="Pings, speed tests and iperf3, into node_exporter's textfile collector.")
-  parser.add_argument("--config", default=DEFAULT_CONFIG, help=f"JSON config (default {DEFAULT_CONFIG})")
+  parser = argparse.ArgumentParser(
+    description="Pings, speed tests and iperf3, into node_exporter's textfile collector."
+  )
+  parser.add_argument(
+    "--config", default=DEFAULT_CONFIG, help=f"JSON config (default {DEFAULT_CONFIG})"
+  )
   args = parser.parse_args()
   try:
     config = load_config(args.config)
